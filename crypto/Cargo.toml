@@ -1,0 +1,49 @@
+[package]
+name = "cachepass-crypto"
+version = "0.1.0"
+edition = "2024"
+description = "CachePass client-side vault cryptography (compiled to WebAssembly for the webapp)"
+license = "AGPL-3.0-only"
+publish = false
+
+# This crate is its own workspace root: it belongs to the webapp repository and
+# must never be joined into a workspace with the backend.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+getrandom = "0.4"
+hkdf = "0.13.0"
+sha2 = { version = "0.11.2", default-features = false }
+wasm-bindgen = "=0.2.130"
+zeroize = { version = "1.9.2", features = ["derive"] }
+
+# Browser CSPRNG (crypto.getRandomValues). This crate unconditionally depends on
+# wasm-bindgen on wasm32, which is the case getrandom documents as acceptable.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+js-sys = "0.3.107"
+
+[dev-dependencies]
+hex = "0.4.3"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "warn"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "debuginfo"
