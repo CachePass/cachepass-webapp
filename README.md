@@ -4,6 +4,8 @@ The CachePass password manager client: a static SvelteKit single-page app with a
 Rust → WebAssembly crypto engine. **All vault encryption and decryption happens
 here, in the browser.** The server only ever receives ciphertext.
 
+Source: https://github.com/CachePass/cachepass-webapp · API: https://github.com/CachePass/cachepass-backend
+
 > Status: pre-1.0, **not independently audited**. See the security notes below
 > and `docs/` in the CachePass project for the full design.
 
