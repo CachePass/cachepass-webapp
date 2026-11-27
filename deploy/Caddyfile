@@ -1,0 +1,37 @@
+# Static file server for the CachePass SPA (runs behind the TLS reverse proxy).
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8080 {
+	root * /srv
+	encode zstd gzip
+
+	header {
+		# Script/style policy is delivered by the <meta> CSP SvelteKit generates
+		# (it contains the hash of the inline bootstrap script). These directives
+		# cannot be set by a meta tag, so they are sent as a header.
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		Cross-Origin-Opener-Policy same-origin
+		Cross-Origin-Resource-Policy same-origin
+		-Server
+	}
+
+	@immutable path /_app/immutable/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	@mutable not path /_app/immutable/*
+	header @mutable Cache-Control "no-cache"
+
+	# Never serve source maps or dotfiles if they ever end up in the build.
+	@hidden path *.map /.*
+	respond @hidden 404
+
+	try_files {path} /200.html
+	file_server
+}
