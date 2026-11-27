@@ -201,6 +201,7 @@ test('master password change re-wraps the key; account password reset keeps the 
 	await page.getByLabel('Current master password').fill(MASTER_PASSWORD);
 	await page.getByLabel('New master password', { exact: true }).fill(NEW_MASTER);
 	await page.getByLabel('Confirm new master password').fill(NEW_MASTER);
+	await page.locator('#mp-account').fill(ACCOUNT_PASSWORD);
 	await page.getByRole('button', { name: 'Change master password' }).click();
 	await expect(page.getByText('Master password changed')).toBeVisible({ timeout: 20_000 });
 

@@ -39,8 +39,19 @@ export const auth = {
 export const vault = {
 	get: () => request('GET', '/vault', s.vaultSchema),
 	keyEnvelope: () => request('GET', '/vault/key-envelope', s.keyEnvelopeSchema),
-	putKeyEnvelope: (expected_revision: number, envelope: KeyEnvelope) =>
-		request('PUT', '/vault/key-envelope', s.keyEnvelopeSchema, { expected_revision, envelope }),
+	/** Requires the ACCOUNT password (and a 2FA code when enabled): replacing the envelope is destructive. */
+	putKeyEnvelope: (
+		expected_revision: number,
+		envelope: KeyEnvelope,
+		current_password: string,
+		code?: string
+	) =>
+		request('PUT', '/vault/key-envelope', s.keyEnvelopeSchema, {
+			expected_revision,
+			envelope,
+			current_password,
+			code: code || undefined
+		}),
 	sync: (since?: number) =>
 		request('GET', '/vault/sync', s.syncSchema, undefined, { query: { since } }),
 	createItem: (id: string, ciphertext: string) =>

@@ -58,6 +58,7 @@
 			{#if error}<FormAlert><p>{error}</p></FormAlert>{/if}
 			<p class="text-sm text-muted-foreground">
 				All existing sessions will be signed out. Your vault and master password are not affected.
+				Do not reuse your master password here: the account password is sent to the server.
 			</p>
 			<Field id="password" label="New account password" error={fieldError}>
 				<PasswordInput
