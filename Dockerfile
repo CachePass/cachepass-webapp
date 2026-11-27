@@ -13,6 +13,9 @@ RUN bun run build
 
 FROM caddy:2.10-alpine
 ENV XDG_CONFIG_HOME=/tmp/caddy-config XDG_DATA_HOME=/tmp/caddy-data
+# The upstream binary carries cap_net_bind_service; we listen on :8080 and run
+# with all capabilities dropped, so remove the file capability entirely.
+RUN setcap -r /usr/bin/caddy
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/build /srv
 USER 65532:65532
