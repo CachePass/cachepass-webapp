@@ -1,132 +1,204 @@
-# CachePass Webapp
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/cachepass-logo-dark.png">
+    <img src=".github/assets/cachepass-logo-light.png" alt="CachePass" width="340">
+  </picture>
+</p>
 
-The CachePass password manager client: a static SvelteKit single-page app with a
-Rust → WebAssembly crypto engine. **All vault encryption and decryption happens
-here, in the browser.** The server only ever receives ciphertext.
+<h3 align="center">CachePass Web App</h3>
 
-Source: https://github.com/CachePass/cachepass-webapp · API: https://github.com/CachePass/cachepass-backend
+<p align="center">
+  The CachePass password manager client.<br>
+  <strong>All vault encryption and decryption happens here, in your browser.</strong>
+</p>
 
-> Status: pre-1.0, **not independently audited**. See the security notes below
-> and the [design docs](https://github.com/CachePass/cachepass-docs) ([CRYPTOGRAPHY.md](https://github.com/CachePass/cachepass-docs/blob/main/docs/CRYPTOGRAPHY.md), [THREAT_MODEL.md](https://github.com/CachePass/cachepass-docs/blob/main/docs/THREAT_MODEL.md)) for the full design.
+<p align="center">
+  <a href="LICENSE"><img alt="License: AGPL-3.0-only" src="https://img.shields.io/badge/license-AGPL--3.0--only-1f3a5f"></a>
+  <img alt="SvelteKit 3 and Svelte 5" src="https://img.shields.io/badge/SvelteKit%203-Svelte%205-ff3e00">
+  <img alt="Rust compiled to WebAssembly" src="https://img.shields.io/badge/crypto-Rust%20%E2%86%92%20WebAssembly-654ff0">
+  <a href="https://github.com/CachePass/cachepass-docs/blob/main/docs/ROADMAP.md#security-audit-milestones"><img alt="Status: pre-1.0, not audited" src="https://img.shields.io/badge/status-pre--1.0%20%C2%B7%20not%20audited-d97706"></a>
+</p>
 
-## What it does
+<p align="center">
+  <a href="#features">Features</a> ·
+  <a href="#how-encryption-works">Encryption</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#testing">Testing</a> ·
+  <a href="#deployment">Deployment</a> ·
+  <a href="#security">Security</a>
+</p>
 
-- Account sign-in (email + account password, optional TOTP 2FA) using HttpOnly session cookies
-- Vault unlock with a separate **master password** that never leaves the device
-- Logins, secure notes, cards, identities and SSH keys; folders, favourites, trash/restore
-- Local search, filtering and sorting over decrypted data (secrets are never indexed)
-- Live TOTP codes, password/passphrase generator (CSPRNG, EFF wordlist), strength meter
-- Auto-lock on inactivity, optional lock-on-hide, clipboard auto-clear
-- Master password change (re-wrap), account password change, 2FA setup, session/device management, activity log
-- Command palette (⌘/Ctrl K), keyboard shortcuts, light/dark themes, responsive layout
+---
 
-## Architecture
+A static SvelteKit single-page application with a Rust crypto engine compiled to
+WebAssembly. It talks to the [CachePass API](https://github.com/CachePass/cachepass-backend),
+which only ever receives ciphertext. The cryptographic format is specified in
+[CRYPTOGRAPHY.md](https://github.com/CachePass/cachepass-docs/blob/main/docs/CRYPTOGRAPHY.md).
 
-```
-crypto/                 Rust crate (Argon2id, HKDF-SHA-256, XChaCha20-Poly1305) → WASM
-src/lib/crypto/         WASM bindings (generated, committed), worker, typed engine facade
-  core.ts               spec implementation wrapper (runs inside the worker)
-  worker.ts / engine.ts the vault key lives only in the worker's WASM memory
-src/lib/api/            fetch client (CSRF, uniform errors) + Zod mirrors of openapi.json
-src/lib/schemas/        encrypted item/folder payload schemas (Zod)
-src/lib/stores/         session, vault (decrypted, memory only), settings (non-sensitive), ui
-src/lib/features/       authentication, vault (search, TOTP, clipboard), generator, security
-src/lib/components/     ui/ (shadcn-svelte), layout/, vault/, auth/, shared/
-src/routes/(auth)/      login, register, verify-email, forgot/reset-password, unlock
-src/routes/(app)/       vault, favorites, trash, folders, generator, security, settings
-```
+> [!IMPORTANT]
+> CachePass is **pre-1.0 and has not been independently audited**. Read the
+> [threat model](https://github.com/CachePass/cachepass-docs/blob/main/docs/THREAT_MODEL.md)
+> and the [security notes](#security) below before relying on it.
 
-Key handling: the master password is NFC-normalised and passed to the worker; the
-worker derives the KEK with Argon2id + HKDF, unwraps the vault key into a WASM-held
-handle and zeroizes the KEK. Locking terminates the worker, discarding its memory.
+## Features
+
+| Area           | What you get                                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Vault**      | Logins, secure notes, payment cards, identities and SSH keys · folders · favourites · trash and restore · custom fields   |
+| **Search**     | Instant local search, filtering and sorting over decrypted data — secrets are never indexed                               |
+| **Generators** | Password and passphrase generator (browser CSPRNG, EFF wordlist), strength meter, live TOTP codes                         |
+| **Protection** | Auto-lock on inactivity or hidden tab, clipboard auto-clear, local weak / reused password report                          |
+| **Account**    | Sign-in with optional TOTP 2FA, master and account password changes, sessions, devices, activity log                      |
+| **Experience** | Command palette (<kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>K</kbd>), keyboard shortcuts, light and dark themes, responsive layout |
+
+## How encryption works
+
+1. The master password is NFC-normalised and handed to a dedicated **Web Worker**.
+2. The worker derives a key-encryption key with **Argon2id** (64 MiB, 3 passes by
+   default) and **HKDF-SHA-256**, and unwraps the random 256-bit vault key with
+   **XChaCha20-Poly1305**. The derived key is zeroized immediately.
+3. The vault key stays inside the worker's WebAssembly memory behind an opaque
+   handle; JavaScript never sees it.
+4. Each item and folder is encrypted as one padded JSON document, bound to its
+   vault and item id through authenticated associated data.
+5. **Locking** terminates the worker, discarding its memory, clears the decrypted
+   store and any pending clipboard secret.
+
 Nothing decrypted is written to `localStorage`, `sessionStorage`, IndexedDB,
-cookies or URLs; only non-sensitive preferences (theme, auto-lock minutes,
-clipboard timeout, sort order) are persisted.
+cookies or URLs. Only non-sensitive preferences (theme, auto-lock time, clipboard
+timeout, sort order) are persisted.
 
-## Requirements
+## Project structure
+
+```
+crypto/                 Rust crate (Argon2id, HKDF-SHA-256, XChaCha20-Poly1305) → WebAssembly
+src/lib/crypto/         generated WASM bindings (committed), worker, typed engine facade
+src/lib/api/            fetch client (CSRF, uniform errors) + Zod mirrors of openapi.json
+src/lib/schemas/        encrypted item and folder payload schemas (Zod)
+src/lib/stores/         session · vault (decrypted, memory only) · settings · ui
+src/lib/features/       authentication · vault (search, TOTP, clipboard) · generator · security
+src/lib/components/     ui (shadcn-svelte) · layout · vault · auth · shared
+src/routes/(auth)/      login · register · verify-email · forgot / reset password · unlock
+src/routes/(app)/       vault · favorites · trash · folders · generator · security · settings
+e2e/                    Playwright tests against a real backend
+```
+
+## Getting started
+
+### Prerequisites
 
 - [Bun](https://bun.sh) ≥ 1.4
-- Only to rebuild the WASM engine: Rust stable with the `wasm32-unknown-unknown`
-  target and `wasm-bindgen-cli 0.2.130` (`cargo install wasm-bindgen-cli --version 0.2.130 --locked`)
-- A running `cachepass-backend` for anything beyond unit tests
+- A running [cachepass-backend](https://github.com/CachePass/cachepass-backend) for anything
+  beyond unit tests
+- Only to rebuild the WebAssembly engine: Rust stable with the `wasm32-unknown-unknown`
+  target and `wasm-bindgen-cli 0.2.130`
 
-## Development
+### Run locally
 
 ```sh
 bun install
-bun run dev                 # http://localhost:5173, proxies /api → http://127.0.0.1:8080
-CACHEPASS_API_URL=http://127.0.0.1:9000 bun run dev   # different backend
+bun run dev                                          # http://localhost:5173, proxies /api → :8080
+CACHEPASS_API_URL=http://127.0.0.1:9000 bun run dev  # use a different backend
 ```
 
-Start the backend (see its README) with `CACHEPASS_PUBLIC_URL=http://localhost:5173`.
-The webapp and API must share one origin (the dev/preview proxy and the production
-Caddy setup both do this) so cookies can be `SameSite=Strict`.
+Start the backend with `CACHEPASS_PUBLIC_URL=http://localhost:5173`. The web app and
+API must share one origin — the dev proxy and the production Caddy setup both do
+this — so session cookies can be `SameSite=Strict`.
 
-| Command               | Purpose                                                                                       |
-| --------------------- | --------------------------------------------------------------------------------------------- |
-| `bun run check`       | svelte-check + TypeScript (strict)                                                            |
-| `bun run lint`        | Prettier + ESLint (type-aware)                                                                |
-| `bun run test`        | Unit, component and WASM crypto tests (Vitest; component/WASM tests run in headless Chromium) |
-| `bun run test:e2e`    | Playwright end-to-end tests against a real backend (see below)                                |
-| `bun run test:crypto` | Rust unit tests and spec vectors of the crypto crate                                          |
-| `bun run build`       | Production build → `build/` (static files, `200.html` SPA fallback)                           |
-| `bun run build:wasm`  | Rebuild `src/lib/crypto/wasm/` from `crypto/`                                                 |
-| `bun run wasm:verify` | Rebuild and fail if the committed WASM differs                                                |
+### Scripts
 
-### Crypto engine
+| Command               | Purpose                                                                          |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `bun run dev`         | Development server with API proxy                                                |
+| `bun run check`       | `svelte-check` and strict TypeScript                                             |
+| `bun run lint`        | Prettier and type-aware ESLint                                                   |
+| `bun run test`        | Unit, component and WebAssembly crypto tests (Vitest; browser tests in Chromium) |
+| `bun run test:e2e`    | Playwright end-to-end tests against a real backend                               |
+| `bun run test:crypto` | Rust unit tests and specification vectors of the crypto crate                    |
+| `bun run build`       | Production build → `build/` (static files with a `200.html` SPA fallback)        |
+| `bun run build:wasm`  | Rebuild `src/lib/crypto/wasm/` from `crypto/`                                    |
+| `bun run wasm:verify` | Rebuild and fail if the committed WebAssembly differs                            |
 
-`crypto/` is a standalone Cargo crate (its own workspace; never shared with the
-backend). Its output in `src/lib/crypto/wasm/` is committed so the webapp builds
-with Bun alone. After changing `crypto/`, run `bun run build:wasm`, `bun run
-test:crypto` and `bun run test`, and commit the regenerated files. CI should run
-`bun run wasm:verify`.
+### Working on the crypto engine
 
-Cross-implementation check: `src/lib/crypto/core.browser.spec.ts` recomputes the
-specification's test vectors with `@noble/hashes` and `@noble/ciphers` (test-only
-dependencies) and checks that the WASM engine matches them byte for byte.
+`crypto/` is a standalone Cargo crate with its own workspace. Its compiled output
+in `src/lib/crypto/wasm/` is committed so the app builds with Bun alone. After
+changing it:
 
-### End-to-end tests
+```sh
+bun run test:crypto && bun run build:wasm && bun run test
+```
 
-1. Start the backend's dev services: `docker compose -f docker-compose.dev.yml up -d` (in `cachepass-backend`).
-2. Run the backend with `CACHEPASS_PUBLIC_URL=http://localhost:4173`, SMTP pointed
-   at Mailpit (`CACHEPASS_SMTP_HOST=127.0.0.1 CACHEPASS_SMTP_PORT=51025 CACHEPASS_SMTP_TLS=none`)
+and commit the regenerated files. Install the matching bindgen once with
+`cargo install wasm-bindgen-cli --version 0.2.130 --locked`.
+
+## Testing
+
+- **Cross-implementation crypto tests** — `src/lib/crypto/core.browser.spec.ts` runs the
+  real WebAssembly engine in Chromium and recomputes every specification test vector
+  with the independent `@noble/hashes` and `@noble/ciphers` libraries.
+- **Unit and component tests** — generators, strength estimation, TOTP (RFC 6238
+  vectors), search, validation, clipboard behaviour, lock races and UI components.
+- **End-to-end tests** — Playwright drives registration, email verification, unlock,
+  item CRUD, search, folders, trash, locking, master password change and account
+  password reset against a real backend, and asserts that **no API request ever
+  contains the master password or item plaintext**.
+
+To run the end-to-end suite:
+
+1. In `cachepass-backend`, start PostgreSQL and Mailpit:
+   `docker compose -f docker-compose.dev.yml up -d`.
+2. Run the backend with `CACHEPASS_PUBLIC_URL=http://localhost:4173`, SMTP pointed at
+   Mailpit (`CACHEPASS_SMTP_HOST=127.0.0.1 CACHEPASS_SMTP_PORT=51025 CACHEPASS_SMTP_TLS=none`)
    and, for repeated runs, `CACHEPASS_RATE_LIMIT_ENABLED=false`.
-3. `bun run test:e2e` builds the app, serves it on :4173 and drives Chromium through
-   registration, email verification (read from Mailpit), unlock, CRUD, search,
-   folders, trash, locking, master password change and account password reset. It
-   also records every API request and asserts that the master password and item
-   plaintext never appear in them.
+3. `bun run test:e2e`.
 
 ## Deployment
 
-The production image is a static file server (Caddy, non-root, read-only rootfs):
+The production image is a non-root Caddy static file server with a read-only root
+filesystem and no Linux capabilities:
 
 ```sh
 docker build -t cachepass-webapp:local .
 ```
 
-It listens on `:8080` without TLS and is meant to sit behind the reverse proxy in
-`cachepass-backend/docker-compose.yml`, which serves `/` from this container and
-`/api/*` from the API on the same origin.
+It listens on `:8080` without TLS and is designed to sit behind the reverse proxy in
+the [backend's Docker Compose stack](https://github.com/CachePass/cachepass-backend#self-hosting),
+which serves `/` from this container and `/api/*` from the API on the same origin.
 
-Security headers: the SvelteKit build emits a hash-based CSP `<meta>` tag
+**Security headers.** The build emits a hash-based Content Security Policy
 (`default-src 'none'; script-src 'self' 'wasm-unsafe-eval' <hash>; connect-src 'self'; …`).
 `deploy/Caddyfile` adds `frame-ancestors 'none'`, `X-Frame-Options`, `nosniff`,
 `Referrer-Policy: no-referrer`, `Permissions-Policy` and cache headers.
 
-## Security notes and limitations
+## Security
 
-- **You must trust the server that delivers this code.** A malicious or
-  compromised server, build or dependency can ship JavaScript that captures the
-  master password. Zero-knowledge storage does not protect against that.
-- A compromised browser, extension or OS defeats client-side protections.
-- Decrypted values exist as JavaScript strings while unlocked and cannot be
-  reliably wiped from JS memory; CachePass drops all references on lock.
-- Clipboard clearing is best effort (browsers only allow it while the page has focus).
+Known limitations of browser-based cryptography:
+
+- **You must trust the server that delivers this code.** A malicious or compromised
+  server, build pipeline or dependency can ship JavaScript that captures the master
+  password. Zero-knowledge storage does not protect against that.
+- A compromised browser, extension or operating system defeats client-side protections.
+- Decrypted values exist as JavaScript strings while unlocked and cannot be reliably
+  wiped from memory; CachePass drops all references on lock.
+- Clipboard clearing is best effort: browsers only allow it while the page has focus,
+  so a pending clear runs when the window regains focus.
 - The strength meter is a heuristic estimate, not a guarantee.
+
+Report vulnerabilities privately via a
+[GitHub security advisory](https://github.com/CachePass/cachepass-webapp/security/advisories/new)
+— see [SECURITY.md](https://github.com/CachePass/cachepass-docs/blob/main/docs/SECURITY.md).
+
+## Related repositories
+
+| Repository                                                          | Role                                                                    |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [cachepass-backend](https://github.com/CachePass/cachepass-backend) | API, database and deployment                                            |
+| [cachepass-website](https://github.com/CachePass/cachepass-website) | Public product site                                                     |
+| [cachepass-docs](https://github.com/CachePass/cachepass-docs)       | Architecture, cryptography specification, threat model, security policy |
 
 ## License
 
-AGPL-3.0-only — see [LICENSE](LICENSE). The EFF Large Wordlist
-(`src/lib/features/generator/wordlist.ts`) is © Electronic Frontier Foundation,
-CC BY 3.0 US.
+Licensed under the [GNU Affero General Public License v3.0 only](LICENSE).
+The EFF Large Wordlist (`src/lib/features/generator/wordlist.ts`) is © Electronic
+Frontier Foundation, licensed CC BY 3.0 US.
