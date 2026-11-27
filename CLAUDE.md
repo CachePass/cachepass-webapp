@@ -9,7 +9,7 @@ plus `crypto/`, a Rust crate compiled to WASM. This repo owns ALL vault cryptogr
   The API contract is `cachepass-backend/openapi.json`; mirror changes in
   `src/lib/api/schemas.ts` + `endpoints.ts`.
 - `crypto/` is its own Cargo workspace. Never add it to another workspace.
-- Crypto format = `docs/CRYPTOGRAPHY.md` (project root). Changing the format needs a
+- Crypto format = `docs/CRYPTOGRAPHY.md` (workspace root symlink → `cachepass-docs` repo). Changing the format needs a
   version bump, new vectors, and updates to the backend's envelope validator.
 
 ## Security rules (non-negotiable)

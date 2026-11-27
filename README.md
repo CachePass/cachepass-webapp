@@ -7,7 +7,7 @@ here, in the browser.** The server only ever receives ciphertext.
 Source: https://github.com/CachePass/cachepass-webapp · API: https://github.com/CachePass/cachepass-backend
 
 > Status: pre-1.0, **not independently audited**. See the security notes below
-> and `docs/` in the CachePass project for the full design.
+> and the [design docs](https://github.com/CachePass/cachepass-docs) ([CRYPTOGRAPHY.md](https://github.com/CachePass/cachepass-docs/blob/main/docs/CRYPTOGRAPHY.md), [THREAT_MODEL.md](https://github.com/CachePass/cachepass-docs/blob/main/docs/THREAT_MODEL.md)) for the full design.
 
 ## What it does
 
